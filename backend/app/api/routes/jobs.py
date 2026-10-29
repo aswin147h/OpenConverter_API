@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 
 from app import config
 from app.errors import ConversionError
+from app.security import validate_upload
 from app.services import capabilities
 
 router = APIRouter(prefix="/api/v1", tags=["jobs"])
@@ -33,7 +34,11 @@ def _file_kind(filename: str) -> str | None:
 
 def _run_conversion(job_id: str, src_path: str, dst_path: str, target_format: str, lang: str) -> None:
     job = JOB_STORE[job_id]
+    if job["status"] == "cancelled":
+            return
     job["status"] = "processing"
+    job["progress"] = 0
+    job["message"] = "Processing document"
 
     kind = _file_kind(job["source_name"])
     adapter = capabilities.get_adapter(kind, target_format) if kind else None
@@ -41,22 +46,37 @@ def _run_conversion(job_id: str, src_path: str, dst_path: str, target_format: st
         raise ConversionError("unsupported_conversion", "Unsupported conversion pair.")
 
     try:
-        adapter(src_path, dst_path, lang=lang, progress=lambda current, total: None)
+        def progress(current: int, total: int) -> None:
+            if job["status"] == "cancelled":
+                return
+            job["progress"] = round(current / total * 100) if total else 100
+            job["message"] = f"OCR processing page {current} of {total}"
+
+        adapter(src_path, dst_path, lang=lang, progress=progress)
     except ConversionError as exc:
+        if job["status"] == "cancelled":
+            return
         job["status"] = "failed"
         job["error"] = {"code": exc.code, "message": exc.message}
         return
     except Exception as exc:  # pragma: no cover - defensive guard for runtime failures
+        if job["status"] == "cancelled":
+            return
         job["status"] = "failed"
         job["error"] = {"code": "internal_error", "message": str(exc)}
         return
 
+    if job["status"] == "cancelled":
+        return
     job["status"] = "completed"
+    job["progress"] = 100
+    job["message"] = "Conversion complete"
+    job["output_format"] = target_format
     job["download_filename"] = f"converted.{target_format}"
     job["output_path"] = dst_path
 
 
-@router.post("/jobs")
+@router.post("/jobs", status_code=202)
 def create_job(
     file: UploadFile = File(...),
     target_format: str = Form(...),
@@ -66,6 +86,9 @@ def create_job(
     target_format = target_format.lower().strip(".")
     if not target_format:
         raise HTTPException(status_code=422, detail={"code": "invalid_target_format", "message": "target_format is required"})
+
+    if ocr_language not in config.ALLOWED_OCR_LANGUAGES:
+        raise HTTPException(status_code=422, detail={"code": "invalid_language", "message": "OCR language is not supported."})
 
     source_kind = _file_kind(file.filename or "")
     if source_kind is None:
@@ -92,9 +115,25 @@ def create_job(
         input_path = job_dir / f"input{suffix}"
 
     # Save the uploaded content to the job directory.
-    file_bytes = file.file.read()
+    file_bytes = file.file.read(config.MAX_UPLOAD_BYTES + 1)
     if not file_bytes:
         raise HTTPException(status_code=400, detail={"code": "empty_file", "message": "Uploaded file is empty."})
+    if len(file_bytes) > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail={"code": "upload_too_large", "message": "Upload exceeds the configured size limit."})
+
+    try:
+        detected_kind = validate_upload(
+            file.filename or "",
+            file_bytes,
+            config.MAX_UPLOAD_BYTES,
+            config.MAX_PAGES,
+        )
+    except ConversionError as exc:
+        status_code = 422 if exc.code == "encrypted_pdf" else 415
+        raise HTTPException(status_code=status_code, detail={"code": exc.code, "message": exc.message})
+
+    if detected_kind != source_kind:
+        raise HTTPException(status_code=415, detail={"code": "unsupported_file_type", "message": "The file content does not match its extension."})
 
     input_path.write_bytes(file_bytes)
     output_path = job_dir / f"converted.{target_format}"
@@ -104,6 +143,9 @@ def create_job(
         "status": "queued",
         "source_name": file.filename or "upload",
         "target_format": target_format,
+        "output_format": target_format,
+        "progress": 0,
+        "message": "Waiting to be processed",
         "ocr_enabled": ocr_enabled,
         "ocr_language": ocr_language,
         "created_at": __import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -131,10 +173,14 @@ def get_job(job_id: str):
     return {
         "job_id": job_id,
         "status": job["status"],
+        "progress": job.get("progress", 0),
+        "message": job.get("message", ""),
         "target_format": job.get("target_format"),
+        "output_format": job.get("output_format", job.get("target_format")),
         "ocr_enabled": job.get("ocr_enabled", False),
         "ocr_language": job.get("ocr_language", "eng"),
         "error": job.get("error"),
+        "error_code": job.get("error", {}).get("code"),
         "download_url": f"/api/v1/jobs/{job_id}/download" if job["status"] == "completed" else None,
     }
 
