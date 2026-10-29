@@ -1,4 +1,7 @@
 """Tesseract adapter (arguments passed as arrays by pytesseract; timeout enforced)."""
+import os
+import shutil
+
 from PIL import Image
 import pytesseract
 
@@ -6,6 +9,22 @@ from .. import config
 from ..errors import ConversionError
 
 Image.MAX_IMAGE_PIXELS = config.MAX_IMAGE_PIXELS
+
+
+def _configure_tesseract() -> None:
+    candidates = [
+        config.TESSERACT_CMD,
+        shutil.which("tesseract"),
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            return
+
+
+_configure_tesseract()
 
 
 def check_language(lang: str) -> str:

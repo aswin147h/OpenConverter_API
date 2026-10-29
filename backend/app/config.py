@@ -10,4 +10,5 @@ RETENTION_SECONDS = int(os.getenv("OC_RETENTION_SECONDS", 3600))
 ALLOWED_OCR_LANGUAGES = frozenset(
     x for x in os.getenv("OC_OCR_LANGS", "eng").split(",") if x
 )
+TESSERACT_CMD = os.getenv("OC_TESSERACT_CMD")
 DATA_DIR = os.getenv("OC_DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "data"))
