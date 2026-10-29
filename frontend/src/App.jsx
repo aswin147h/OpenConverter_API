@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
@@ -34,13 +34,10 @@ function App() {
     : file?.name.match(/\.(jpe?g|png|tiff?)$/i)
       ? 'image'
       : null
-  const outputs = capabilities?.valid_outputs?.[fileKind] || []
-
-  useEffect(() => {
-    if (!target || !outputs.includes(target)) {
-      setTarget(outputs[0] || '')
-    }
-  }, [file, capabilities, outputs, target])
+  const outputs = useMemo(() => capabilities?.supported_conversions?.filter(
+    (conversion) => conversion.input === fileKind,
+  ).map((conversion) => conversion.output) || [], [capabilities, fileKind])
+  const selectedTarget = outputs.includes(target) ? target : (outputs[0] || '')
 
   function stopPolling() {
     clearInterval(polling.current)
@@ -68,7 +65,7 @@ function App() {
   async function submit(event) {
     event.preventEvent?.()
     event.preventDefault()
-    if (!file || !target) {
+    if (!file || !selectedTarget) {
       setError('Choose a supported file and output format.')
       return
     }
@@ -78,7 +75,7 @@ function App() {
     setJob(null)
     const form = new FormData()
     form.append('file', file)
-    form.append('target_format', target)
+    form.append('target_format', selectedTarget)
     form.append('ocr_enabled', String(ocrEnabled))
     form.append('ocr_language', ocrLanguage)
 
@@ -114,7 +111,7 @@ function App() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${file.name.replace(/\.[^.]+$/, '')}.${target}`
+      link.download = `${file.name.replace(/\.[^.]+$/, '')}.${selectedTarget}`
       link.click()
       URL.revokeObjectURL(url)
     } catch (reason) {
@@ -158,7 +155,7 @@ function App() {
           <div className="options-grid">
             <label>
               Output format
-              <select value={target} onChange={(event) => setTarget(event.target.value)} disabled={!outputs.length}>
+              <select value={selectedTarget} onChange={(event) => setTarget(event.target.value)} disabled={!outputs.length}>
                 {outputs.map((format) => <option key={format} value={format}>{format.toUpperCase()}</option>)}
               </select>
             </label>
@@ -178,7 +175,7 @@ function App() {
             <span>Enable OCR</span>
           </label>
 
-          <button className="primary-button" type="submit" disabled={!file || !target || submitting}>
+          <button className="primary-button" type="submit" disabled={!file || !selectedTarget || submitting}>
             {submitting ? 'Starting conversion...' : 'Convert document'}
           </button>
         </form>
