@@ -1,6 +1,7 @@
 import os
 import threading
 import uuid
+import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,9 @@ from app import config
 from app.errors import ConversionError
 from app.security import validate_upload
 from app.services import capabilities
+from app.storage.job_store import create as store_create_job
+from app.storage.job_store import get as store_get_job
+from app.storage.job_store import update as store_update_job
 
 router = APIRouter(prefix="/api/v1", tags=["jobs"])
 
@@ -39,6 +43,7 @@ def _run_conversion(job_id: str, src_path: str, dst_path: str, target_format: st
     job["status"] = "processing"
     job["progress"] = 0
     job["message"] = "Processing document"
+    store_update_job(job_id, status="processing", progress=0, message="Processing document")
 
     kind = _file_kind(job["source_name"])
     adapter = capabilities.get_adapter(kind, target_format) if kind else None
@@ -51,6 +56,11 @@ def _run_conversion(job_id: str, src_path: str, dst_path: str, target_format: st
                 return
             job["progress"] = round(current / total * 100) if total else 100
             job["message"] = f"OCR processing page {current} of {total}"
+            store_update_job(
+                job_id,
+                progress=job["progress"],
+                message=job["message"],
+            )
 
         adapter(src_path, dst_path, lang=lang, progress=progress)
     except ConversionError as exc:
@@ -58,12 +68,14 @@ def _run_conversion(job_id: str, src_path: str, dst_path: str, target_format: st
             return
         job["status"] = "failed"
         job["error"] = {"code": exc.code, "message": exc.message}
+        store_update_job(job_id, status="failed", error_code=exc.code, error_message=exc.message)
         return
-    except Exception as exc:  # pragma: no cover - defensive guard for runtime failures
+    except Exception:  # pragma: no cover - defensive guard for runtime failures
         if job["status"] == "cancelled":
             return
         job["status"] = "failed"
-        job["error"] = {"code": "internal_error", "message": str(exc)}
+        job["error"] = {"code": "internal_error", "message": "Conversion failed unexpectedly."}
+        store_update_job(job_id, status="failed", error_code="internal_error", error_message="Conversion failed unexpectedly.")
         return
 
     if job["status"] == "cancelled":
@@ -74,6 +86,7 @@ def _run_conversion(job_id: str, src_path: str, dst_path: str, target_format: st
     job["output_format"] = target_format
     job["download_filename"] = f"converted.{target_format}"
     job["output_path"] = dst_path
+    store_update_job(job_id, status="completed", progress=100, message="Conversion complete", output_path=dst_path)
 
 
 @router.post("/jobs", status_code=202)
@@ -148,11 +161,19 @@ def create_job(
         "message": "Waiting to be processed",
         "ocr_enabled": ocr_enabled,
         "ocr_language": ocr_language,
-        "created_at": __import__("datetime").datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "created_at": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
         "input_path": str(input_path),
         "output_path": str(output_path),
     }
     JOB_STORE[job_id] = job
+    store_create_job(
+        job_id,
+        file.filename or "upload",
+        target_format,
+        job["created_at"],
+        str(input_path),
+        str(output_path),
+    )
 
     thread = threading.Thread(
         target=_run_conversion,
@@ -167,6 +188,25 @@ def create_job(
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str):
     job = JOB_STORE.get(job_id)
+    if job is None:
+        stored = store_get_job(job_id)
+        if stored:
+            job = {
+                "job_id": job_id,
+                "status": stored["status"],
+                "progress": stored["progress"],
+                "message": stored["message"],
+                "target_format": stored["target_format"],
+                "output_format": stored["target_format"],
+                "ocr_enabled": False,
+                "ocr_language": "eng",
+                "error": None,
+                "input_path": stored["input_path"],
+                "output_path": stored["output_path"],
+            }
+            if stored["error_code"]:
+                job["error"] = {"code": stored["error_code"], "message": stored["error_message"]}
+            JOB_STORE[job_id] = job
     if job is None:
         raise HTTPException(status_code=404, detail={"code": "job_not_found", "message": "Job not found."})
 
@@ -211,6 +251,7 @@ def cancel_job(job_id: str):
         raise HTTPException(status_code=404, detail={"code": "job_not_found", "message": "Job not found."})
 
     job["status"] = "cancelled"
+    store_update_job(job_id, status="cancelled", progress=job.get("progress", 0), message="Job cancelled")
     for path in [job.get("input_path"), job.get("output_path")]:
         if path:
             try:
@@ -223,14 +264,14 @@ def cancel_job(job_id: str):
 
 @router.get("/capabilities")
 def capabilities_endpoint():
+    supported = [
+        {"input": kind, "output": target, "ocr": kind in {"image", "pdf"}}
+        for kind in sorted({source for source, _ in capabilities.ROUTES})
+        for target in capabilities.outputs_for(kind)
+    ]
     return {
-        "supported_conversions": [
-            {"input": "image", "output": "txt", "ocr": True},
-            {"input": "image", "output": "pdf", "ocr": True},
-            {"input": "pdf", "output": "txt", "ocr": True},
-            {"input": "pdf", "output": "pdf", "ocr": True},
-        ],
-        "supported_input_types": ["image", "pdf"],
+        "supported_conversions": supported,
+        "supported_input_types": sorted({source for source, _ in capabilities.ROUTES}),
         "ocr_languages": sorted(config.ALLOWED_OCR_LANGUAGES),
         "limits": {
             "max_upload_bytes": config.MAX_UPLOAD_BYTES,

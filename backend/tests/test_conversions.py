@@ -1,5 +1,8 @@
 import fitz
 import pytest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.errors import ConversionError
 from app.services import capabilities, conversion, ocr, pdf
@@ -59,5 +62,53 @@ def test_corrupt_pdf(tmp_path):
 
 def test_capabilities_matrix():
     assert capabilities.outputs_for("image") == ["pdf", "txt"]
-    assert capabilities.outputs_for("pdf") == ["pdf", "txt"]
+    assert capabilities.outputs_for("pdf") == ["docx", "pdf", "txt"]
+    assert capabilities.outputs_for("docx") == ["pdf", "txt"]
+    assert capabilities.outputs_for("xlsx") == ["csv", "pdf"]
+    assert capabilities.outputs_for("pptx") == ["pdf"]
     assert capabilities.get_adapter("image", "docx") is None
+
+
+def test_docx_to_txt(docx_path, tmp_path):
+    out = tmp_path / "sample.txt"
+    conversion.docx_to_txt(docx_path, str(out))
+    text = out.read_text(encoding="utf-8")
+    assert "OpenConvert Word document" in text
+    assert "Name\tValue" in text
+
+
+def test_xlsx_to_csv(xlsx_path, tmp_path):
+    out = tmp_path / "sample.csv"
+    conversion.xlsx_to_csv(xlsx_path, str(out))
+    text = out.read_text(encoding="utf-8")
+    assert "Worksheet: Results" in text
+    assert "OpenConvert,123" in text
+
+
+def test_pdf_to_docx(text_pdf, tmp_path):
+    out = tmp_path / "sample.docx"
+    conversion.pdf_to_docx(text_pdf, str(out))
+    from docx import Document
+
+    document = Document(str(out))
+    assert "Native text layer document for OpenConvert testing." in "\n".join(
+        paragraph.text for paragraph in document.paragraphs
+    )
+
+
+def test_office_to_pdf_mocked(tmp_path):
+    src = tmp_path / "sample.docx"
+    src.write_bytes(b"fake-office-source")
+    dst = tmp_path / "sample.pdf"
+
+    def fake_run(command, **kwargs):
+        outdir = Path(command[command.index("--outdir") + 1])
+        (outdir / "sample.pdf").write_bytes(b"%PDF-1.4")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with patch.object(conversion, "_libreoffice_executable", return_value="/usr/bin/soffice"), patch.object(
+        conversion.subprocess, "run", side_effect=fake_run
+    ):
+        conversion.docx_to_pdf(str(src), str(dst))
+
+    assert dst.read_bytes().startswith(b"%PDF")

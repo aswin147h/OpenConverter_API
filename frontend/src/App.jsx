@@ -31,6 +31,12 @@ function App() {
 
   const fileKind = file?.name.match(/\.pdf$/i)
     ? 'pdf'
+    : file?.name.match(/\.docx$/i)
+      ? 'docx'
+    : file?.name.match(/\.xlsx$/i)
+      ? 'xlsx'
+    : file?.name.match(/\.pptx$/i)
+      ? 'pptx'
     : file?.name.match(/\.(jpe?g|png|tiff?)$/i)
       ? 'image'
       : null
@@ -141,7 +147,7 @@ function App() {
           <label className={`drop-zone ${file ? 'has-file' : ''}`}>
             <input
               type="file"
-              accept=".jpg,.jpeg,.png,.tif,.tiff,.pdf"
+              accept=".jpg,.jpeg,.png,.tif,.tiff,.pdf,.docx,.xlsx,.pptx"
               onChange={(event) => {
                 setFile(event.target.files?.[0] || null)
                 setError('')
@@ -149,7 +155,7 @@ function App() {
             />
             <span className="drop-icon">{file ? '✓' : '+'}</span>
             <strong>{file ? file.name : 'Choose a document'}</strong>
-            <small>{file ? `${Math.ceil(file.size / 1024)} KB` : 'JPG, PNG, TIFF, or PDF'}</small>
+            <small>{file ? `${Math.ceil(file.size / 1024)} KB` : 'JPG, PNG, TIFF, PDF, DOCX, XLSX, or PPTX'}</small>
           </label>
 
           <div className="options-grid">
@@ -202,8 +208,12 @@ function App() {
               </button>
             )}
             {job.status === 'failed' && <p className="job-error">Error: {job.error_code || 'processing_failed'}</p>}
+            {job.status === 'expired' && <p className="job-error">This result has expired and is no longer available.</p>}
           </div>
         )}
+        <p className="privacy-notice">
+          Files are processed privately and deleted automatically after the retention window.
+        </p>
       </section>
     </main>
   )

@@ -2,6 +2,7 @@ from io import BytesIO
 
 import fitz
 from PIL import Image
+import zipfile
 
 from ..errors import ConversionError
 
@@ -42,5 +43,41 @@ def validate_upload(filename: str, content: bytes, max_bytes: int, max_pages: in
         except Exception as exc:
             raise ConversionError("invalid_image", "The uploaded image could not be read.") from exc
         return "image"
+
+    if extension == "docx":
+        try:
+            with zipfile.ZipFile(BytesIO(content)) as archive:
+                names = set(archive.namelist())
+                if "word/document.xml" not in names:
+                    raise ConversionError("invalid_docx", "The uploaded Word document could not be read.")
+        except ConversionError:
+            raise
+        except Exception as exc:
+            raise ConversionError("invalid_docx", "The uploaded Word document could not be read.") from exc
+        return "docx"
+
+    if extension == "xlsx":
+        try:
+            with zipfile.ZipFile(BytesIO(content)) as archive:
+                names = set(archive.namelist())
+                if "[Content_Types].xml" not in names or "xl/workbook.xml" not in names:
+                    raise ConversionError("invalid_xlsx", "The uploaded Excel workbook could not be read.")
+        except ConversionError:
+            raise
+        except Exception as exc:
+            raise ConversionError("invalid_xlsx", "The uploaded Excel workbook could not be read.") from exc
+        return "xlsx"
+
+    if extension == "pptx":
+        try:
+            with zipfile.ZipFile(BytesIO(content)) as archive:
+                names = set(archive.namelist())
+                if "[Content_Types].xml" not in names or "ppt/presentation.xml" not in names:
+                    raise ConversionError("invalid_pptx", "The uploaded PowerPoint file could not be read.")
+        except ConversionError:
+            raise
+        except Exception as exc:
+            raise ConversionError("invalid_pptx", "The uploaded PowerPoint file could not be read.") from exc
+        return "pptx"
 
     raise ConversionError("unsupported_file_type", "The uploaded file type is not supported.")

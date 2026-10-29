@@ -1,6 +1,8 @@
 import fitz
 import pytest
 from PIL import Image, ImageDraw, ImageFont
+from docx import Document
+from openpyxl import Workbook
 
 
 def _text_image(text="Hello OpenConvert 12345", size=(900, 200)):
@@ -39,4 +41,28 @@ def scanned_pdf(tmp_path, image_path):
         page = doc.new_page(width=612, height=200)
         page.insert_image(page.rect, filename=image_path)
     doc.save(p)
+    return str(p)
+
+
+@pytest.fixture
+def docx_path(tmp_path):
+    p = tmp_path / "sample.docx"
+    document = Document()
+    document.add_paragraph("OpenConvert Word document")
+    table = document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "Name"
+    table.rows[0].cells[1].text = "Value"
+    document.save(p)
+    return str(p)
+
+
+@pytest.fixture
+def xlsx_path(tmp_path):
+    p = tmp_path / "sample.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Results"
+    sheet.append(["Name", "Value"])
+    sheet.append(["OpenConvert", 123])
+    workbook.save(p)
     return str(p)

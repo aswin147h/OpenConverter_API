@@ -32,9 +32,10 @@ Upload a file, pick an output format, optionally turn on OCR, watch the progress
 | Scanned PDF | TXT | ✔ | ✅ Working |
 | Text PDF | TXT | ✘ (native extraction) | ✅ Working |
 | DOCX / XLSX / PPTX | PDF | ✘ | 🛠 Planned (LibreOffice) |
-| DOCX | TXT | ✘ | 🛠 Planned |
-| XLSX | CSV | ✘ | 🛠 Planned |
-| PDF | DOCX | best-effort | 🛠 Planned |
+| DOCX | TXT | ✘ | ✅ Working |
+| XLSX | CSV | ✘ | ✅ Working |
+| DOCX / XLSX / PPTX | PDF | ✘ | ✅ Working with LibreOffice |
+| PDF | DOCX | best-effort | ✅ Working |
 | PDF tables | XLSX | heuristic | 🛠 Planned (review required) |
 
 Unsupported by design: executables, unknown archives, password-protected files, corrupted files, macros.
@@ -169,9 +170,9 @@ python -m app.cli scan.pdf out.pdf       # scanned PDF → searchable PDF
 
 - [x] **Phase 0** – Scope, limits and project structure
 - [x] **Phase 1** – Local OCR engine (image/PDF → TXT and searchable PDF) with tests
-- [ ] **Phase 2** – Office conversions via LibreOffice, CSV/TXT extraction
-- [ ] **Phase 3** – FastAPI job API (upload, status, download, capabilities)
-- [ ] **Phase 4** – React drag-and-drop UI with progress
+- [x] **Phase 2** – Office conversions via LibreOffice, CSV/TXT extraction
+- [x] **Phase 3** – FastAPI job API (upload, status, download, capabilities)
+- [x] **Phase 4** – React drag-and-drop UI with progress
 - [ ] **Phase 5** – Docker, queue, rate limits, malware scanning, hardening
 - [ ] **Phase 6** – Private beta, then iterate on real usage
 
