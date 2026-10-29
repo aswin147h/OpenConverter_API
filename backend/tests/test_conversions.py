@@ -1,0 +1,63 @@
+import fitz
+import pytest
+
+from app.errors import ConversionError
+from app.services import capabilities, conversion, ocr, pdf
+
+
+def test_image_to_txt(image_path, tmp_path):
+    out = tmp_path / "o.txt"
+    conversion.image_to_txt(image_path, str(out))
+    assert "OpenConvert" in out.read_text()
+
+
+def test_image_to_searchable_pdf(image_path, tmp_path):
+    out = tmp_path / "o.pdf"
+    conversion.image_to_searchable_pdf(image_path, str(out))
+    with fitz.open(out) as d:
+        assert "OpenConvert" in d[0].get_text()
+
+
+def test_text_pdf_uses_native_extraction(text_pdf):
+    doc = pdf.open_pdf(text_pdf)
+    assert pdf.has_native_text(doc)
+    doc.close()
+    assert "Native text layer" in pdf.pdf_to_text(text_pdf)
+
+
+def test_scanned_pdf_detected_and_ocrd(scanned_pdf):
+    doc = pdf.open_pdf(scanned_pdf)
+    assert not pdf.has_native_text(doc)
+    doc.close()
+    calls = []
+    text = pdf.pdf_to_text(scanned_pdf, progress=lambda c, t: calls.append((c, t)))
+    assert text.count("OpenConvert") == 2
+    assert calls == [(1, 2), (2, 2)]
+
+
+def test_scanned_pdf_to_searchable_pdf(scanned_pdf, tmp_path):
+    out = tmp_path / "s.pdf"
+    conversion.pdf_to_searchable_pdf(scanned_pdf, str(out))
+    with fitz.open(out) as d:
+        assert d.page_count == 2
+        assert all("OpenConvert" in p.get_text() for p in d)
+
+
+def test_invalid_language_rejected(image_path):
+    with pytest.raises(ConversionError) as e:
+        ocr.image_to_text(ocr.open_image(image_path), "xx; rm -rf /")
+    assert e.value.code == "invalid_language"
+
+
+def test_corrupt_pdf(tmp_path):
+    p = tmp_path / "bad.pdf"
+    p.write_bytes(b"not a pdf")
+    with pytest.raises(ConversionError) as e:
+        pdf.open_pdf(str(p))
+    assert e.value.code == "invalid_pdf"
+
+
+def test_capabilities_matrix():
+    assert capabilities.outputs_for("image") == ["pdf", "txt"]
+    assert capabilities.outputs_for("pdf") == ["pdf", "txt"]
+    assert capabilities.get_adapter("image", "docx") is None

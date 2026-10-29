@@ -1,0 +1,821 @@
+From 33719c1ab996d4ada712b14c16ce03af8d857928 Mon Sep 17 00:00:00 2001
+From: OpenConvert Dev <openconvert@example.com>
+Date: Thu, 29 Oct 2026 15:26:52 +0000
+Subject: [PATCH] chore: repo skeleton, docs, fixed .gitignore
+
+---
+ .gitignore                           | 12 +++++
+ README.md                            | 34 ++++++++++++-
+ backend/app/__init__.py              |  0
+ backend/app/api/__init__.py          |  0
+ backend/app/api/routes/__init__.py   |  0
+ backend/app/cli.py                   | 37 ++++++++++++++
+ backend/app/config.py                | 13 +++++
+ backend/app/errors.py                |  6 +++
+ backend/app/security/__init__.py     |  0
+ backend/app/services/__init__.py     |  0
+ backend/app/services/capabilities.py | 29 +++++++++++
+ backend/app/services/conversion.py   | 28 +++++++++++
+ backend/app/services/ocr.py          | 43 ++++++++++++++++
+ backend/app/services/pdf.py          | 74 ++++++++++++++++++++++++++++
+ backend/app/storage/__init__.py      |  0
+ backend/app/workers/__init__.py      |  0
+ backend/pytest.ini                   |  3 ++
+ backend/requirements.txt             | 10 ++++
+ backend/tests/__init__.py            |  0
+ backend/tests/conftest.py            | 42 ++++++++++++++++
+ backend/tests/test_conversions.py    | 63 +++++++++++++++++++++++
+ data/.gitkeep                        |  0
+ docs/api-contract.md                 | 48 ++++++++++++++++++
+ docs/architecture-diagram.txt        | 24 +++++++++
+ docs/architecture.md                 | 49 ++++++++++++++++++
+ docs/roadmap.md                      | 41 +++++++++++++++
+ docs/security.md                     | 31 ++++++++++++
+ docs/supported-formats.md            | 27 ++++++++++
+ 28 files changed, 613 insertions(+), 1 deletion(-)
+ create mode 100644 .gitignore
+ create mode 100644 backend/app/__init__.py
+ create mode 100644 backend/app/api/__init__.py
+ create mode 100644 backend/app/api/routes/__init__.py
+ create mode 100644 backend/app/cli.py
+ create mode 100644 backend/app/config.py
+ create mode 100644 backend/app/errors.py
+ create mode 100644 backend/app/security/__init__.py
+ create mode 100644 backend/app/services/__init__.py
+ create mode 100644 backend/app/services/capabilities.py
+ create mode 100644 backend/app/services/conversion.py
+ create mode 100644 backend/app/services/ocr.py
+ create mode 100644 backend/app/services/pdf.py
+ create mode 100644 backend/app/storage/__init__.py
+ create mode 100644 backend/app/workers/__init__.py
+ create mode 100644 backend/pytest.ini
+ create mode 100644 backend/requirements.txt
+ create mode 100644 backend/tests/__init__.py
+ create mode 100644 backend/tests/conftest.py
+ create mode 100644 backend/tests/test_conversions.py
+ create mode 100644 data/.gitkeep
+ create mode 100644 docs/api-contract.md
+ create mode 100644 docs/architecture-diagram.txt
+ create mode 100644 docs/architecture.md
+ create mode 100644 docs/roadmap.md
+ create mode 100644 docs/security.md
+ create mode 100644 docs/supported-formats.md
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..0fe29da
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,12 @@
++.env
++.venv/
++__pycache__/
++*.py[cod]
++node_modules/
++dist/
++coverage/
++.pytest_cache/
++# runtime data only (anchored so backend/app/storage/ code is NOT ignored)
++/data/*
++*.sqlite3
++!/data/.gitkeep
+diff --git a/README.md b/README.md
+index f2a8bfd..10e8b7f 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,33 @@
+-# OpenConverter_API
+\ No newline at end of file
++# OpenConvert — OCR Document Converter
++
++A Python-first free-to-use OCR document conversion web app.
++
++## MVP goal
++Users upload supported documents, choose an output format, optionally enable OCR, see processing status, and download the result.
++
++## Stack
++- Frontend: React + TypeScript (Vite) — Phase 4
++- API: FastAPI + Uvicorn — Phase 3
++- OCR: Tesseract + pytesseract
++- PDF: PyMuPDF
++- Office conversions: LibreOffice headless — Phase 2
++- Later: Redis + Celery, PostgreSQL, Docker Compose
++
++## Scope note
++Only explicit, tested conversion routes are exposed (see `docs/supported-formats.md`). OCR does not perfectly reconstruct layout, tables or handwriting.
++
++## Quick start (backend)
++```bash
++cd backend
++python -m venv .venv && source .venv/bin/activate
++pip install -r requirements.txt
++pytest
++python -m app.cli scan.png out.txt --lang eng
++python -m app.cli scan.pdf out.pdf
++```
++
++## Layout
++- `backend/app/` — services (ocr, pdf, conversion, capabilities), config, CLI
++- `backend/tests/` — unit and regression tests
++- `frontend/` — React app (not started)
++- `docs/` — architecture, API contract, format matrix, security checklist, roadmap
+diff --git a/backend/app/__init__.py b/backend/app/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/api/__init__.py b/backend/app/api/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/api/routes/__init__.py b/backend/app/api/routes/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/cli.py b/backend/app/cli.py
+new file mode 100644
+index 0000000..8dd261f
+--- /dev/null
++++ b/backend/app/cli.py
+@@ -0,0 +1,37 @@
++"""CLI: python -m app.cli INPUT OUTPUT [--lang eng]. Output format comes from OUTPUT extension."""
++import argparse
++import os
++import sys
++
++from .errors import ConversionError
++from .services import capabilities
++
++
++def main(argv=None) -> int:
++    p = argparse.ArgumentParser(prog="openconvert")
++    p.add_argument("input")
++    p.add_argument("output")
++    p.add_argument("--lang", default="eng")
++    a = p.parse_args(argv)
++
++    kind = capabilities.kind_for_extension(os.path.splitext(a.input)[1])
++    target = os.path.splitext(a.output)[1].lstrip(".").lower()
++    adapter = capabilities.get_adapter(kind, target) if kind else None
++    if adapter is None:
++        print(f"Unsupported conversion. Supported outputs for this input: "
++              f"{capabilities.outputs_for(kind) if kind else 'none'}", file=sys.stderr)
++        return 2
++
++    def progress(cur, total):
++        print(f"page {cur}/{total}", file=sys.stderr)
++
++    try:
++        adapter(a.input, a.output, a.lang, progress)
++    except ConversionError as exc:
++        print(f"Error [{exc.code}]: {exc.message}", file=sys.stderr)
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/backend/app/config.py b/backend/app/config.py
+new file mode 100644
+index 0000000..733f7c5
+--- /dev/null
++++ b/backend/app/config.py
+@@ -0,0 +1,13 @@
++"""Environment-driven settings and processing limits."""
++import os
++
++MAX_UPLOAD_BYTES = int(os.getenv("OC_MAX_UPLOAD_BYTES", 20 * 1024 * 1024))
++MAX_PAGES = int(os.getenv("OC_MAX_PAGES", 30))
++MAX_IMAGE_PIXELS = int(os.getenv("OC_MAX_IMAGE_PIXELS", 60_000_000))
++OCR_TIMEOUT_SECONDS = int(os.getenv("OC_OCR_TIMEOUT", 60))  # per page
++RENDER_DPI = int(os.getenv("OC_RENDER_DPI", 200))
++RETENTION_SECONDS = int(os.getenv("OC_RETENTION_SECONDS", 3600))
++ALLOWED_OCR_LANGUAGES = frozenset(
++    x for x in os.getenv("OC_OCR_LANGS", "eng").split(",") if x
++)
++DATA_DIR = os.getenv("OC_DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+diff --git a/backend/app/errors.py b/backend/app/errors.py
+new file mode 100644
+index 0000000..146a2c2
+--- /dev/null
++++ b/backend/app/errors.py
+@@ -0,0 +1,6 @@
++class ConversionError(Exception):
++    """Safe-to-show error. Message must never contain paths or file contents."""
++    def __init__(self, code: str, message: str):
++        super().__init__(message)
++        self.code = code
++        self.message = message
+diff --git a/backend/app/security/__init__.py b/backend/app/security/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/services/__init__.py b/backend/app/services/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/services/capabilities.py b/backend/app/services/capabilities.py
+new file mode 100644
+index 0000000..f28f909
+--- /dev/null
++++ b/backend/app/services/capabilities.py
+@@ -0,0 +1,29 @@
++"""Explicit supported conversion matrix. Only routes with automated tests belong here."""
++from . import conversion
++
++# (input_kind, output_format) -> adapter
++ROUTES = {
++    ("image", "txt"): conversion.image_to_txt,
++    ("image", "pdf"): conversion.image_to_searchable_pdf,
++    ("pdf", "txt"): conversion.pdf_to_txt,
++    ("pdf", "pdf"): conversion.pdf_to_searchable_pdf,
++}
++
++IMAGE_EXTS = {"jpg", "jpeg", "png", "tif", "tiff"}
++
++
++def kind_for_extension(ext: str):
++    ext = ext.lower().lstrip(".")
++    if ext in IMAGE_EXTS:
++        return "image"
++    if ext == "pdf":
++        return "pdf"
++    return None
++
++
++def outputs_for(kind: str):
++    return sorted({out for (k, out) in ROUTES if k == kind})
++
++
++def get_adapter(kind: str, target: str):
++    return ROUTES.get((kind, target))
+diff --git a/backend/app/services/conversion.py b/backend/app/services/conversion.py
+new file mode 100644
+index 0000000..5f22650
+--- /dev/null
++++ b/backend/app/services/conversion.py
+@@ -0,0 +1,28 @@
++"""Route adapters. Each takes (src, dst, lang, progress) and writes dst."""
++from . import ocr, pdf
++
++
++def image_to_txt(src, dst, lang="eng", progress=None):
++    text = ocr.image_to_text(ocr.open_image(src), lang)
++    with open(dst, "w", encoding="utf-8") as f:
++        f.write(text)
++    if progress:
++        progress(1, 1)
++
++
++def image_to_searchable_pdf(src, dst, lang="eng", progress=None):
++    data = ocr.image_to_pdf_bytes(ocr.open_image(src), lang)
++    with open(dst, "wb") as f:
++        f.write(data)
++    if progress:
++        progress(1, 1)
++
++
++def pdf_to_txt(src, dst, lang="eng", progress=None):
++    text = pdf.pdf_to_text(src, lang, progress=progress)
++    with open(dst, "w", encoding="utf-8") as f:
++        f.write(text)
++
++
++def pdf_to_searchable_pdf(src, dst, lang="eng", progress=None):
++    pdf.pdf_to_searchable_pdf(src, dst, lang, progress=progress)
+diff --git a/backend/app/services/ocr.py b/backend/app/services/ocr.py
+new file mode 100644
+index 0000000..95bd8db
+--- /dev/null
++++ b/backend/app/services/ocr.py
+@@ -0,0 +1,43 @@
++"""Tesseract adapter (arguments passed as arrays by pytesseract; timeout enforced)."""
++from PIL import Image
++import pytesseract
++
++from .. import config
++from ..errors import ConversionError
++
++Image.MAX_IMAGE_PIXELS = config.MAX_IMAGE_PIXELS
++
++
++def check_language(lang: str) -> str:
++    parts = lang.split("+")
++    if not parts or any(p not in config.ALLOWED_OCR_LANGUAGES for p in parts):
++        raise ConversionError("invalid_language", "OCR language is not supported.")
++    return lang
++
++
++def image_to_text(image: Image.Image, lang: str = "eng") -> str:
++    lang = check_language(lang)
++    try:
++        return pytesseract.image_to_string(image, lang=lang, timeout=config.OCR_TIMEOUT_SECONDS)
++    except RuntimeError as exc:  # pytesseract raises RuntimeError on timeout
++        raise ConversionError("ocr_timeout", "OCR timed out.") from exc
++
++
++def image_to_pdf_bytes(image: Image.Image, lang: str = "eng") -> bytes:
++    """Single-page PDF: original image plus invisible OCR text layer."""
++    lang = check_language(lang)
++    try:
++        return pytesseract.image_to_pdf_or_hocr(
++            image, lang=lang, extension="pdf", timeout=config.OCR_TIMEOUT_SECONDS
++        )
++    except RuntimeError as exc:
++        raise ConversionError("ocr_timeout", "OCR timed out.") from exc
++
++
++def open_image(path: str) -> Image.Image:
++    try:
++        img = Image.open(path)
++        img.load()
++        return img.convert("RGB")
++    except (OSError, Image.DecompressionBombError) as exc:
++        raise ConversionError("invalid_image", "Image could not be read.") from exc
+diff --git a/backend/app/services/pdf.py b/backend/app/services/pdf.py
+new file mode 100644
+index 0000000..bf897be
+--- /dev/null
++++ b/backend/app/services/pdf.py
+@@ -0,0 +1,74 @@
++"""PDF inspection, native text extraction, rendering and OCR pipelines."""
++from typing import Callable, Optional
++
++import fitz  # PyMuPDF
++from PIL import Image
++
++from .. import config
++from ..errors import ConversionError
++from . import ocr
++
++Progress = Optional[Callable[[int, int], None]]  # (current_page, total_pages)
++MIN_NATIVE_CHARS_PER_PAGE = 20
++
++
++def open_pdf(path: str) -> fitz.Document:
++    try:
++        doc = fitz.open(path)
++    except Exception as exc:
++        raise ConversionError("invalid_pdf", "PDF could not be read.") from exc
++    if doc.needs_pass:
++        doc.close()
++        raise ConversionError("encrypted_pdf", "Password-protected PDFs are not supported.")
++    if doc.page_count > config.MAX_PAGES:
++        doc.close()
++        raise ConversionError("too_many_pages", "PDF exceeds the page limit.")
++    return doc
++
++
++def has_native_text(doc: fitz.Document) -> bool:
++    """True if most pages carry real extractable text."""
++    if doc.page_count == 0:
++        return False
++    good = sum(1 for p in doc if len(p.get_text().strip()) >= MIN_NATIVE_CHARS_PER_PAGE)
++    return good / doc.page_count >= 0.5
++
++
++def extract_native_text(doc: fitz.Document) -> str:
++    return "\n\n".join(p.get_text() for p in doc)
++
++
++def render_page(page: fitz.Page) -> Image.Image:
++    pix = page.get_pixmap(dpi=config.RENDER_DPI)
++    return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
++
++
++def pdf_to_text(path: str, lang: str = "eng", force_ocr: bool = False, progress: Progress = None) -> str:
++    doc = open_pdf(path)
++    try:
++        if not force_ocr and has_native_text(doc):
++            return extract_native_text(doc)
++        texts = []
++        for i, page in enumerate(doc, start=1):
++            texts.append(ocr.image_to_text(render_page(page), lang))
++            if progress:
++                progress(i, doc.page_count)
++        return "\n\n".join(texts)
++    finally:
++        doc.close()
++
++
++def pdf_to_searchable_pdf(path: str, out_path: str, lang: str = "eng", progress: Progress = None) -> None:
++    doc = open_pdf(path)
++    out = fitz.open()
++    try:
++        for i, page in enumerate(doc, start=1):
++            pdf_bytes = ocr.image_to_pdf_bytes(render_page(page), lang)
++            with fitz.open("pdf", pdf_bytes) as single:
++                out.insert_pdf(single)
++            if progress:
++                progress(i, doc.page_count)
++        out.save(out_path)
++    finally:
++        out.close()
++        doc.close()
+diff --git a/backend/app/storage/__init__.py b/backend/app/storage/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/workers/__init__.py b/backend/app/workers/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/pytest.ini b/backend/pytest.ini
+new file mode 100644
+index 0000000..c7b23ec
+--- /dev/null
++++ b/backend/pytest.ini
+@@ -0,0 +1,3 @@
++[pytest]
++pythonpath = .
++testpaths = tests
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+new file mode 100644
+index 0000000..3a47450
+--- /dev/null
++++ b/backend/requirements.txt
+@@ -0,0 +1,10 @@
++fastapi
++uvicorn
++python-multipart
++pytesseract
++pymupdf
++pillow
++python-docx
++openpyxl
++pytest
++httpx
+diff --git a/backend/tests/__init__.py b/backend/tests/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/tests/conftest.py b/backend/tests/conftest.py
+new file mode 100644
+index 0000000..611b868
+--- /dev/null
++++ b/backend/tests/conftest.py
+@@ -0,0 +1,42 @@
++import fitz
++import pytest
++from PIL import Image, ImageDraw, ImageFont
++
++
++def _text_image(text="Hello OpenConvert 12345", size=(900, 200)):
++    img = Image.new("RGB", size, "white")
++    d = ImageDraw.Draw(img)
++    try:
++        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48)
++    except OSError:
++        font = ImageFont.load_default()
++    d.text((30, 60), text, fill="black", font=font)
++    return img
++
++
++@pytest.fixture
++def image_path(tmp_path):
++    p = tmp_path / "scan.png"
++    _text_image().save(p)
++    return str(p)
++
++
++@pytest.fixture
++def text_pdf(tmp_path):
++    p = tmp_path / "text.pdf"
++    doc = fitz.open()
++    page = doc.new_page()
++    page.insert_text((72, 100), "Native text layer document for OpenConvert testing.", fontsize=14)
++    doc.save(p)
++    return str(p)
++
++
++@pytest.fixture
++def scanned_pdf(tmp_path, image_path):
++    p = tmp_path / "scanned.pdf"
++    doc = fitz.open()
++    for _ in range(2):
++        page = doc.new_page(width=612, height=200)
++        page.insert_image(page.rect, filename=image_path)
++    doc.save(p)
++    return str(p)
+diff --git a/backend/tests/test_conversions.py b/backend/tests/test_conversions.py
+new file mode 100644
+index 0000000..d7e9ae6
+--- /dev/null
++++ b/backend/tests/test_conversions.py
+@@ -0,0 +1,63 @@
++import fitz
++import pytest
++
++from app.errors import ConversionError
++from app.services import capabilities, conversion, ocr, pdf
++
++
++def test_image_to_txt(image_path, tmp_path):
++    out = tmp_path / "o.txt"
++    conversion.image_to_txt(image_path, str(out))
++    assert "OpenConvert" in out.read_text()
++
++
++def test_image_to_searchable_pdf(image_path, tmp_path):
++    out = tmp_path / "o.pdf"
++    conversion.image_to_searchable_pdf(image_path, str(out))
++    with fitz.open(out) as d:
++        assert "OpenConvert" in d[0].get_text()
++
++
++def test_text_pdf_uses_native_extraction(text_pdf):
++    doc = pdf.open_pdf(text_pdf)
++    assert pdf.has_native_text(doc)
++    doc.close()
++    assert "Native text layer" in pdf.pdf_to_text(text_pdf)
++
++
++def test_scanned_pdf_detected_and_ocrd(scanned_pdf):
++    doc = pdf.open_pdf(scanned_pdf)
++    assert not pdf.has_native_text(doc)
++    doc.close()
++    calls = []
++    text = pdf.pdf_to_text(scanned_pdf, progress=lambda c, t: calls.append((c, t)))
++    assert text.count("OpenConvert") == 2
++    assert calls == [(1, 2), (2, 2)]
++
++
++def test_scanned_pdf_to_searchable_pdf(scanned_pdf, tmp_path):
++    out = tmp_path / "s.pdf"
++    conversion.pdf_to_searchable_pdf(scanned_pdf, str(out))
++    with fitz.open(out) as d:
++        assert d.page_count == 2
++        assert all("OpenConvert" in p.get_text() for p in d)
++
++
++def test_invalid_language_rejected(image_path):
++    with pytest.raises(ConversionError) as e:
++        ocr.image_to_text(ocr.open_image(image_path), "xx; rm -rf /")
++    assert e.value.code == "invalid_language"
++
++
++def test_corrupt_pdf(tmp_path):
++    p = tmp_path / "bad.pdf"
++    p.write_bytes(b"not a pdf")
++    with pytest.raises(ConversionError) as e:
++        pdf.open_pdf(str(p))
++    assert e.value.code == "invalid_pdf"
++
++
++def test_capabilities_matrix():
++    assert capabilities.outputs_for("image") == ["pdf", "txt"]
++    assert capabilities.outputs_for("pdf") == ["pdf", "txt"]
++    assert capabilities.get_adapter("image", "docx") is None
+diff --git a/data/.gitkeep b/data/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/docs/api-contract.md b/docs/api-contract.md
+new file mode 100644
+index 0000000..82268ba
+--- /dev/null
++++ b/docs/api-contract.md
+@@ -0,0 +1,48 @@
++# API contract (proposed)
++
++## POST /api/v1/jobs
++Content type: multipart/form-data
++Fields:
++- `file`: uploaded file
++- `target_format`: e.g. `pdf`, `docx`, `xlsx`, `txt`, `csv`
++- `ocr_enabled`: boolean
++- `ocr_language`: language code such as `eng` (must be installed and allowlisted)
++
++Response: `202 Accepted`
++```json
++{
++  "job_id": "random-unguessable-id",
++  "status": "queued",
++  "status_url": "/api/v1/jobs/random-unguessable-id"
++}
++```
++
++## GET /api/v1/jobs/{job_id}
++Example response:
++```json
++{
++  "job_id": "random-unguessable-id",
++  "status": "processing",
++  "progress": 45,
++  "message": "OCR processing page 4 of 9",
++  "output_format": "pdf",
++  "error_code": null
++}
++```
++Statuses: `queued`, `processing`, `completed`, `failed`, `expired`, `cancelled`.
++
++## GET /api/v1/jobs/{job_id}/download
++Returns the output as a file attachment only if the job belongs to the requester or a valid unguessable capability token is supplied. In production, prefer a short-lived signed URL for private object storage.
++
++## GET /api/v1/capabilities
++Returns supported input types, valid target formats per input type, OCR languages, maximum file size and page count.
++
++## Error conventions
++- 400: malformed request
++- 413: upload exceeds limit
++- 415: unsupported or mismatched file type
++- 422: unsupported conversion pair or invalid options
++- 429: rate/quota limit reached
++- 500: generic failure; do not expose stack traces or server paths
++
++Do not return raw filesystem paths, internal exception messages, or secrets.
+diff --git a/docs/architecture-diagram.txt b/docs/architecture-diagram.txt
+new file mode 100644
+index 0000000..7f1bdbe
+--- /dev/null
++++ b/docs/architecture-diagram.txt
+@@ -0,0 +1,24 @@
++React + TypeScript
++        |
++        v
++FastAPI (validate, create job, status/download API)
++        |
++        v
++Redis queue -> Celery worker (production / heavier tasks)
++                    |
++          +---------+----------+
++          |                    |
++          v                    v
++     OCR adapter          Conversion adapters
++  Tesseract + OpenCV   PyMuPDF / LibreOffice /
++                       python-docx / openpyxl
++          |                    |
++          +---------+----------+
++                    v
++         Private temporary storage
++                    |
++                    v
++       Status update -> Download endpoint
++                    |
++                    v
++        Automatic expiry and cleanup
+diff --git a/docs/architecture.md b/docs/architecture.md
+new file mode 100644
+index 0000000..7a79975
+--- /dev/null
++++ b/docs/architecture.md
+@@ -0,0 +1,49 @@
++# Architecture
++
++## High-level request flow
++1. React frontend uploads a file and selected conversion options.
++2. FastAPI validates size, extension, detected file type, and supported conversion pair.
++3. API creates a random job ID and stores the input in a private temporary directory or private object storage.
++4. API enqueues a job; a worker processes the file in an isolated working directory.
++5. Worker performs text extraction and/or OCR, then calls the appropriate conversion adapter.
++6. Worker writes output and updates job status.
++7. Frontend polls job status and requests a short-lived download URL.
++8. Cleanup removes input/output artifacts after the configured retention period.
++
++## Components
++- Frontend: upload/drop zone, format selectors, OCR language, progress state, error messages, download button.
++- API: upload endpoint, conversion capability registry, job status, download authorization.
++- Conversion registry: explicit map of supported source/target pairs to adapters.
++- OCR adapter: Tesseract invocation with configured language packs and timeout.
++- PDF adapter: PyMuPDF for text extraction/rendering and PDF inspection.
++- Office adapter: LibreOffice headless in a restricted worker container.
++- Queue: Redis + Celery once jobs may be long-running or concurrent.
++- Metadata database: PostgreSQL in a production deployment; SQLite is acceptable for a local prototype.
++- Storage: local temporary directories for development; private object storage for production.
++- Observability: structured logs, job duration, failure codes, queue depth, resource metrics.
++
++## Processing strategy
++- Text-based PDF: attempt native text extraction first.
++- Scanned PDF: render pages to images, OCR each page, optionally create searchable PDF.
++- Image: OCR directly after orientation/contrast preprocessing when useful.
++- DOCX/XLSX/PPTX: use native parsers or LibreOffice conversion for supported routes.
++- PDF tables -> XLSX: a specialized extraction route; warn users that table structure may need correction.
++- Unsupported pair: return a clear 422 response listing supported output formats.
++
++## API design
++Use asynchronous job semantics for long tasks:
++- POST /api/v1/jobs -> 202 Accepted with job_id
++- GET /api/v1/jobs/{job_id} -> status and progress
++- GET /api/v1/jobs/{job_id}/download -> authorized download response or short-lived URL
++- GET /api/v1/capabilities -> supported extensions, output formats, OCR languages, limits
++- DELETE /api/v1/jobs/{job_id} -> cancel if possible and schedule cleanup
++
++## Deployment profiles
++### Local prototype
++Run frontend and API locally; install Tesseract and LibreOffice on the host. Use local temporary storage and SQLite. No public uploads.
++
++### MVP online
++Frontend static hosting; API and OCR worker in Docker on a host that supports system packages and persistent/temporary storage; Redis queue; managed PostgreSQL only if job history/account features are required. Keep files private and short-lived.
++
++### Scale-up
++Separate API and worker deployments, Redis/Celery, private object storage, PostgreSQL, reverse proxy, monitoring, quotas and autoscaling. OCR workers need CPU and memory limits.
+diff --git a/docs/roadmap.md b/docs/roadmap.md
+new file mode 100644
+index 0000000..d258b00
+--- /dev/null
++++ b/docs/roadmap.md
+@@ -0,0 +1,41 @@
++# Roadmap
++
++## Phase 0 — Scope and UX (1–2 days)
++- Choose a name and minimal visual identity.
++- Decide file size/page limits.
++- Publish a tested format matrix.
++- Sketch upload, options, processing, success and error states.
++
++## Phase 1 — Local OCR engine (3–5 days)
++- Set up Python environment and install Tesseract + language data.
++- Implement image -> TXT.
++- Implement scanned PDF -> searchable PDF and TXT.
++- Add page-by-page processing, timeout and clear errors.
++- Test clean, blurry, rotated, multi-page and Tamil/English samples.
++
++## Phase 2 — Conversion adapters (3–7 days)
++- Add DOCX/XLSX/PPTX -> PDF using LibreOffice.
++- Add text PDF -> TXT and DOCX best-effort.
++- Add CSV/XLSX extraction routes.
++- Create automated tests for every supported source/target pair.
++
++## Phase 3 — API and frontend (4–7 days)
++- Build FastAPI upload/capabilities/status/download endpoints.
++- Build React drag-and-drop UI and progress polling.
++- Add preview, OCR language selection and clear warnings.
++- Add unit and end-to-end tests.
++
++## Phase 4 — Public MVP hardening (3–7 days)
++- Dockerize API and worker.
++- Add job queue for long jobs.
++- Add rate limits, secure temporary storage, automatic cleanup and logging.
++- Run malformed-file and load tests.
++- Add privacy policy, limits and error reporting.
++
++## Phase 5 — Launch and iterate
++- Deploy a private beta first.
++- Track conversion success, median processing time, timeout rate and cost per job.
++- Add formats based on real demand.
++- Add accounts only if they are needed; anonymous conversion reduces initial complexity.
++
++Time estimate: roughly 2–4 weeks for a focused solo MVP, depending on experience, testing depth and hosting setup. This is an estimate, not a guarantee.
+diff --git a/docs/security.md b/docs/security.md
+new file mode 100644
+index 0000000..34d707a
+--- /dev/null
++++ b/docs/security.md
+@@ -0,0 +1,31 @@
++# Security and privacy checklist
++
++A public file converter processes untrusted files. Treat this as a core feature, not a later enhancement.
++
++## Upload protection
++- Allowlist extensions and verify file signatures/content type; never trust the filename or browser MIME type alone.
++- Set maximum upload bytes, page count, image dimensions, processing time, and output size.
++- Generate server-side random filenames; never use a user-supplied path.
++- Reject path traversal, malformed files, encrypted files unless intentionally supported, and unsupported formats.
++- Do not execute macros, scripts, embedded content, or uploaded binaries.
++- Consider malware scanning (e.g. ClamAV) before processing public uploads.
++
++## Worker isolation
++- Run LibreOffice and OCR in a non-root worker container with CPU, memory, process and timeout limits.
++- Use a read-only base filesystem where practical and a dedicated per-job scratch directory.
++- Disable outbound network access from workers unless required.
++- Do not run shell commands by concatenating user-provided strings; pass subprocess arguments as arrays.
++- Use process timeouts and kill the process group on timeout.
++
++## Privacy
++- Tell users what is uploaded and how long it is retained.
++- Delete source and output files automatically after a short retention window (e.g. 1 hour, configurable).
++- Avoid logging document text, filenames containing personal information, or file contents.
++- Use HTTPS, private storage, short-lived download links, and access checks.
++- Add rate limits and quotas to prevent abuse and unexpectedly high hosting costs.
++- Provide a delete-now action if feasible.
++
++## Legal and operational
++- Review licenses for all libraries, OCR language data, fonts and conversion engines.
++- Publish privacy policy and acceptable-use rules before public launch.
++- Do not promise perfect OCR or exact layout preservation.
+diff --git a/docs/supported-formats.md b/docs/supported-formats.md
+new file mode 100644
+index 0000000..2b01c0f
+--- /dev/null
++++ b/docs/supported-formats.md
+@@ -0,0 +1,27 @@
++# Supported formats: MVP policy
++
++Avoid the claim "any file to any file." Publish a tested capability matrix and only expose combinations that have automated tests.
++
++| Input | Output | OCR? | Notes |
++|---|---|---|---|
++| JPG / PNG / TIFF | TXT | Yes | Printed text; accuracy depends on image quality |
++| JPG / PNG / TIFF | Searchable PDF | Yes | Image remains visible; OCR text layer is added |
++| Scanned PDF | Searchable PDF | Yes | Render pages, OCR, create searchable output |
++| Scanned PDF | TXT | Yes | Text only; layout may be lost |
++| Text PDF | TXT | Usually no | Native text extraction first |
++| DOCX | PDF | No | LibreOffice conversion |
++| XLSX | PDF | No | Spreadsheet print layout may differ |
++| PPTX | PDF | No | Slide layout conversion |
++| DOCX | TXT | No | Text extraction |
++| XLSX | CSV | No | One worksheet per CSV export; define worksheet selection |
++| PDF tables | XLSX | Often | Table extraction is heuristic; preview/review required |
++| PDF | DOCX | Sometimes | Best-effort; complex layout may change |
++
++## Add later
++- OCR language selector (English first; Tamil/Hindi after installing and testing trained data)
++- ODT/ODS/ODP, RTF, HTML, CSV
++- Batch jobs and ZIP download
++- OCR confidence indicators and page-level preview
++
++## Unsupported by default
++Executables, archives with unknown contents, password-protected documents without a password workflow, corrupted files, macro execution, and formats with no safe conversion adapter.
+-- 
+2.43.0
+

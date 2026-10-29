@@ -1,0 +1,24 @@
+React + TypeScript
+        |
+        v
+FastAPI (validate, create job, status/download API)
+        |
+        v
+Redis queue -> Celery worker (production / heavier tasks)
+                    |
+          +---------+----------+
+          |                    |
+          v                    v
+     OCR adapter          Conversion adapters
+  Tesseract + OpenCV   PyMuPDF / LibreOffice /
+                       python-docx / openpyxl
+          |                    |
+          +---------+----------+
+                    v
+         Private temporary storage
+                    |
+                    v
+       Status update -> Download endpoint
+                    |
+                    v
+        Automatic expiry and cleanup

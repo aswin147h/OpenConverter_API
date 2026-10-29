@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+dist/
+coverage/
+.pytest_cache/
+# runtime data only (anchored so backend/app/storage/ code is NOT ignored)
+/data/*
+*.sqlite3
+!/data/.gitkeep
