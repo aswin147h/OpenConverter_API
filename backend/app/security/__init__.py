@@ -3,6 +3,7 @@ from io import BytesIO
 import fitz
 from PIL import Image
 import zipfile
+from .. import config
 
 from ..errors import ConversionError
 
@@ -40,6 +41,12 @@ def validate_upload(filename: str, content: bytes, max_bytes: int, max_pages: in
         try:
             with Image.open(BytesIO(content)) as image:
                 image.verify()
+            with Image.open(BytesIO(content)) as image:
+                width, height = image.size
+                if width * height > config.MAX_IMAGE_PIXELS:
+                    raise ConversionError("image_too_large", "The image exceeds the configured pixel limit.")
+        except ConversionError:
+            raise
         except Exception as exc:
             raise ConversionError("invalid_image", "The uploaded image could not be read.") from exc
         return "image"

@@ -35,7 +35,7 @@ def has_native_text(doc: fitz.Document) -> bool:
 
 
 def extract_native_text(doc: fitz.Document) -> str:
-    return "\n\n".join(p.get_text() for p in doc)
+    return "\n\n".join(page.get_text("text", sort=True).strip() for page in doc)
 
 
 def render_page(page: fitz.Page) -> Image.Image:

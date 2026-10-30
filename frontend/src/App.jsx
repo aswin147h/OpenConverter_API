@@ -144,10 +144,15 @@ function App() {
   return (
     <main className="app-shell">
       <header>
-        <div className="brand-mark">O</div>
-        <div className="header-copy">
-          <h1>OpenConvert</h1>
-          <p>Private document conversion</p>
+        <div className="brand-lockup">
+          <div className="brand-mark">↗</div>
+          <div className="header-copy">
+            <h1>OpenConvert <span>AI</span></h1>
+          </div>
+        </div>
+        <div className="header-status">
+          <span>PRIVATE</span>
+          <span className="online-dot">SYSTEM READY</span>
         </div>
         <button className="theme-button" type="button" aria-label="Toggle color theme"
           onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}>
@@ -155,9 +160,27 @@ function App() {
         </button>
       </header>
 
+      <section className="hero">
+        <span className="eyebrow">DOCUMENT INTELLIGENCE · PRIVACY FIRST</span>
+        <h2>Convert any document<br /><span>with confidence.</span></h2>
+        <p>Upload a document, choose its destination format, and let OpenConvert process it securely.</p>
+      </section>
+
+      <section className="metric-strip" aria-label="Service metrics">
+        <div><strong>9+</strong><span>Conversion routes</span></div>
+        <div><strong>20 MB</strong><span>Upload limit</span></div>
+        <div><strong>30</strong><span>Maximum PDF pages</span></div>
+        <div><strong>1 hr</strong><span>Automatic retention</span></div>
+      </section>
+
       <div className="workspace-grid">
         <section className="converter-card">
           <form onSubmit={submit}>
+            <div className="panel-heading">
+              <span className="panel-icon">↥</span>
+              <div><strong>Upload document</strong><small>Private processing workspace</small></div>
+              <span className="format-badge">LOCAL</span>
+            </div>
             <label
               className={`drop-zone ${file ? 'has-file' : ''} ${dragging ? 'dragging' : ''}`}
               onDragEnter={(event) => { event.preventEvent?.(); event.preventDefault(); setDragging(true) }}
@@ -212,7 +235,6 @@ function App() {
                   <button type="button" className="text-button" onClick={() => deleteJob(job.job_id)}>Delete now</button>}
               </div>
               <div className="progress-track"><div style={{ width: `${job.progress || 0}%` }} /></div>
-              {job.status === 'completed' && <button type="button" className="download-button" onClick={() => download()}>{`Download ${job.output_format?.toUpperCase()}`}</button>}
               {job.status === 'failed' && <p className="job-error">Error: {job.error_code || 'processing_failed'}</p>}
               {job.status === 'cancelled' && <p className="job-error">This job was deleted and cleaned up.</p>}
             </div>
@@ -220,6 +242,33 @@ function App() {
           <p className="privacy-notice">Files are processed privately and deleted automatically after the retention window.</p>
         </section>
 
+        <section className="result-card" aria-live="polite">
+          <div className="panel-heading">
+            <span className="panel-icon">✓</span>
+            <div><strong>Conversion result</strong><small>Live job status</small></div>
+          </div>
+          <div className={`result-empty ${job ? 'has-job' : ''}`}>
+            <div className="result-orb">{job?.status === 'completed' ? '✓' : job?.status === 'failed' ? '!' : '↗'}</div>
+            {job ? (
+              <div className="result-content">
+                <span className={`status status-${job.status}`}>{job.status}</span>
+                <h3>{job.status === 'completed' ? 'Conversion complete' : job.status === 'failed' ? 'Conversion failed' : job.message}</h3>
+                {job.status === 'completed' && <p>Your result is ready to download.</p>}
+                {job.status === 'processing' && <p>Progress: {job.progress || 0}%</p>}
+              </div>
+            ) : (
+              <div className="result-content">
+                <h3>Awaiting document</h3>
+                <p>Choose a file and conversion format to begin.</p>
+              </div>
+            )}
+          </div>
+          {job?.status === 'completed' && (
+            <button type="button" className="download-button" onClick={download}>
+              Download {job.output_format?.toUpperCase()}
+            </button>
+          )}
+        </section>
       </div>
     </main>
   )
