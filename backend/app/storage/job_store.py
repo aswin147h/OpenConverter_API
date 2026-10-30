@@ -72,6 +72,17 @@ def get(job_id: str):
         return dict(row) if row else None
 
 
+def list_recent(limit: int = 20):
+    initialize()
+    with _lock, sqlite3.connect(_database_path()) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
 def cleanup(retention_seconds: int) -> int:
     initialize()
     cutoff = time.time() - retention_seconds

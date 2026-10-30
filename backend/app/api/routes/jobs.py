@@ -15,6 +15,7 @@ from app.services import capabilities
 from app.storage.job_store import create as store_create_job
 from app.storage.job_store import get as store_get_job
 from app.storage.job_store import update as store_update_job
+from app.storage.job_store import list_recent as store_list_recent
 
 router = APIRouter(prefix="/api/v1", tags=["jobs"])
 
@@ -183,6 +184,24 @@ def create_job(
     thread.start()
 
     return {"job_id": job_id, "status": "queued"}
+
+
+@router.get("/jobs")
+def list_jobs(limit: int = 20):
+    return [
+        {
+            "job_id": row["job_id"],
+            "status": row["status"],
+            "progress": row["progress"],
+            "message": row["message"],
+            "source_name": row["source_name"],
+            "target_format": row["target_format"],
+            "output_format": row["target_format"],
+            "created_at": row["created_at"],
+            "error_code": row["error_code"],
+        }
+        for row in store_list_recent(max(1, min(limit, 100)))
+    ]
 
 
 @router.get("/jobs/{job_id}")

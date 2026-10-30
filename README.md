@@ -31,7 +31,6 @@ Upload a file, pick an output format, optionally turn on OCR, watch the progress
 | Scanned PDF | Searchable PDF | ✔ | ✅ Working |
 | Scanned PDF | TXT | ✔ | ✅ Working |
 | Text PDF | TXT | ✘ (native extraction) | ✅ Working |
-| DOCX / XLSX / PPTX | PDF | ✘ | 🛠 Planned (LibreOffice) |
 | DOCX | TXT | ✘ | ✅ Working |
 | XLSX | CSV | ✘ | ✅ Working |
 | DOCX / XLSX / PPTX | PDF | ✘ | ✅ Working with LibreOffice |

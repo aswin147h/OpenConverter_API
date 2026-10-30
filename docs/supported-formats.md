@@ -14,7 +14,6 @@ Avoid the claim "any file to any file." Publish a tested capability matrix and o
 | PPTX | PDF | No | Slide layout conversion |
 | DOCX | TXT | No | Text extraction |
 | XLSX | CSV | No | One worksheet per CSV export; define worksheet selection |
-| PDF tables | XLSX | Often | Table extraction is heuristic; preview/review required |
 | PDF | DOCX | Sometimes | Best-effort; complex layout may change |
 
 ## Add later

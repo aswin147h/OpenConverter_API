@@ -22,6 +22,12 @@ def test_health_and_capabilities():
     assert body["limits"]["max_upload_bytes"] > 0
 
 
+def test_job_history_endpoint():
+    response = client.get("/api/v1/jobs?limit=20")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
 def test_create_status_and_download_image_job(image_path):
     with open(image_path, "rb") as upload:
         response = client.post(
